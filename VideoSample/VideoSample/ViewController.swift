@@ -105,6 +105,14 @@ class ViewController: UIViewController {
 extension ViewController: AVCaptureFileOutputRecordingDelegate {
     func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
 
+        // どこのディレクトリに保存するか
+        let documentDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let destinationURL = documentDirectory.appendingPathComponent("hogehoge.mp4")
+        
+        // 保存したいファイルタイプ
+        let fileType = AVFileType.mp4
+        
+        exportMovie(sourceURL: outputFileURL, destinationURL: destinationURL, fileType: fileType)
         // show alert
         let alert = UIAlertController(title: "Recorded!", message: outputFileURL.absoluteString, preferredStyle: .alert)
         let okAction = UIAlertAction(title: "OK", style: UIAlertAction.Style.default, handler: nil)
@@ -113,5 +121,44 @@ extension ViewController: AVCaptureFileOutputRecordingDelegate {
         self.present(alert, animated: true, completion: nil)
     }
     
-    
+    func exportMovie(sourceURL: URL, destinationURL: URL, fileType: AVFileType) {
+        
+        let avAsset = AVAsset(url: sourceURL)
+        
+        // videoとaudioのトラックをそれぞれ取得
+        let videoTrack = avAsset.tracks(withMediaType: .video)[0]
+        let audioTracks = avAsset.tracks(withMediaType: .audio)
+        let audioTrack = audioTracks.count > 0 ? audioTracks[0] : nil
+        
+        let mainComposition = AVMutableComposition()
+        
+        // videoとaudioのコンポジショントラックをそれぞれ作成
+        let compositionVideoTrack = mainComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)!
+        let compositionAudioTrack = audioTrack != nil
+                                    ? mainComposition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
+                                    : nil
+        
+        // コンポジションの設定
+        try! compositionVideoTrack.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: avAsset.duration), of: videoTrack, at: CMTime.zero)
+        try! compositionAudioTrack?.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: avAsset.duration), of: audioTrack!, at: CMTime.zero)
+        
+        // エクスポートするためのセッションを作成
+        let assetExxport = AVAssetExportSession.init(asset: mainComposition, presetName: AVAssetExportPresetMediumQuality)
+        
+        // エクスポートするファイルの種類を設定
+        assetExxport?.outputFileType = fileType
+        
+        // エクスポート先URLを設定
+        assetExxport?.outputURL = destinationURL
+        
+        // エクスポート先URLにすでにファイルが存在していれば削除する（上書きはできないよう）
+        if FileManager.default.fileExists(atPath: (assetExxport?.outputURL?.path)!) {
+            try! FileManager.default.removeItem(atPath: (assetExxport?.outputURL?.path)!)
+        }
+        
+        // エクスポートする
+        assetExxport?.exportAsynchronously(completionHandler: {
+            // エクスポート完了後に実行する処理
+        })
+    }
 }
