@@ -10,40 +10,52 @@ import AVFoundation
 
 class ViewController: UIViewController {
     
+    // MARK: Property
     @IBOutlet weak var recordBtn: UIButton!
+    @IBOutlet weak var cameraView: UIView!
     
     // movieのキャプチャ出力オブジェクト
     let fileOutput = AVCaptureMovieFileOutput()
     let captureSession = AVCaptureSession()
-
+    
+    // MARK: LifeCycle
     override func viewDidLoad() {
         super.viewDidLoad()
         
         setupCamera()
-        setupBtn()
+        setupView()
+        
+        //画面向きを左横画面でセットする
+        UIDevice.current.setValue(4, forKey: "orientation")
+        
+        //画面の向きを変更させるために呼び出す。
+        print(supportedInterfaceOrientations)
     }
     
-    func setupBtn() {
-        recordBtn.layer.borderColor = UIColor.black.cgColor
-        recordBtn.layer.borderWidth = 5
+    // MARK: Setup
+    func setupView() {
         recordBtn.backgroundColor = UIColor.red
         recordBtn.clipsToBounds = true
         recordBtn.layer.cornerRadius = min(recordBtn.frame.width, recordBtn.frame.height) / 2
     }
     
     func setupCamera() {
-        // 最長120秒に指定
-        fileOutput.maxRecordedDuration = CMTimeMake(value: 120, timescale: 1)
+        // 最長60秒に指定
+        fileOutput.maxRecordedDuration = CMTimeMake(value: 60, timescale: 1)
         
         setupImageQuality()
         
         // 通常のレンズかつ、ビデオモードで、フロントカメラを使用する
-        let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: [AVCaptureDevice.DeviceType.builtInWideAngleCamera],
-                                                                      mediaType: AVMediaType.video,
-                                                                      position: AVCaptureDevice.Position.front)
+        let deviceDiscoverySession
+            = AVCaptureDevice.DiscoverySession(deviceTypes: [AVCaptureDevice.DeviceType.builtInWideAngleCamera],
+                                               mediaType: AVMediaType.video,
+                                               position: AVCaptureDevice.Position.front)
+        
+        // 使用できるデバイスの一覧を取得
         let devices = deviceDiscoverySession.devices
         var innerCamera: AVCaptureDevice?
         for device in devices {
+            // 使用できるデバイスの中からフロントカメラを選択
             if device.position == AVCaptureDevice.Position.front {
                 innerCamera = device
             }
@@ -64,24 +76,59 @@ class ViewController: UIViewController {
         captureSession.startRunning()
         
         // video preview layer
+        // 画像の位置決め、今回はStoryboard上で16:9に設定している
         let videoLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        videoLayer.frame = self.view.bounds
+        
+        // safeエリアのありなしで、viewの設定方法を変更する
+        let safeAreaInsets = UIApplication.shared.windows.first?.safeAreaInsets.left
+        if (safeAreaInsets != 0.0) {
+            videoLayer.frame = cameraView.frame
+        } else {
+            videoLayer.frame = cameraView.bounds
+        }
+        
         videoLayer.videoGravity = .resizeAspectFill
-        self.view.layer.addSublayer(videoLayer)
+        // 画角を横固定に
+        videoLayer.connection?.videoOrientation = .landscapeRight
+        cameraView.layer.addSublayer(videoLayer)
     }
     
     func setupImageQuality() {
         captureSession.beginConfiguration()
         
-        if captureSession.canSetSessionPreset(.high) {
-            captureSession.sessionPreset = .high
-        } else if captureSession.canSetSessionPreset(.medium) {
-            captureSession.sessionPreset = .medium
-        }
+        // .highを設定すると、16:9の画角になる
+        captureSession.sessionPreset = .high
         
         captureSession.commitConfiguration()
     }
     
+    // 横画面固定にする
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        
+        //左横画面に変更
+        if (UIDevice.current.orientation.rawValue == 4) {
+            UIDevice.current.setValue(4, forKey: "orientation")
+            return .landscapeLeft
+            
+        } else {
+            //最初の画面呼び出しで画面を右横画面に変更させる。
+            UIDevice.current.setValue(3, forKey: "orientation")
+            return .landscapeRight
+        }
+    }
+    
+    // 画面を自動で回転させるかを決定する。
+    override var shouldAutorotate: Bool {
+        
+        //画面が縦だった場合は回転させない
+        if (UIDevice.current.orientation.rawValue == 1) {
+            return false
+        } else {
+            return true
+        }
+    }
+    
+    // MARK: IBAction
     @IBAction func onClickRecordBtn(_ sender: Any) {
         if fileOutput.isRecording {
             // stop recording
@@ -102,9 +149,10 @@ class ViewController: UIViewController {
     }
 }
 
+// MARK: AVCaptureFileOutputRecordingDelegate
 extension ViewController: AVCaptureFileOutputRecordingDelegate {
     func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
-
+        
         // どこのディレクトリに保存するか
         let documentDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let destinationURL = documentDirectory.appendingPathComponent("hogehoge.mp4")
@@ -135,8 +183,8 @@ extension ViewController: AVCaptureFileOutputRecordingDelegate {
         // videoとaudioのコンポジショントラックをそれぞれ作成
         let compositionVideoTrack = mainComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)!
         let compositionAudioTrack = audioTrack != nil
-                                    ? mainComposition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
-                                    : nil
+            ? mainComposition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
+            : nil
         
         // コンポジションの設定
         try! compositionVideoTrack.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: avAsset.duration), of: videoTrack, at: CMTime.zero)
